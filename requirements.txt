@@ -20,4 +20,5 @@ langchain-tavily
 tavily-python
 sqlalchemy
 
+certifi
 wikipedia

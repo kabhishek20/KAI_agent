@@ -1,4 +1,6 @@
-from  pathlib import Path
+"""RAG helpers for reading uploaded files and retrieving relevant document chunks."""
+
+from pathlib import Path
 from typing import List
 from dotenv import load_dotenv
 
@@ -19,86 +21,101 @@ load_dotenv()
 os.environ["SSL_CERT_FILE"] = certifi.where()
 os.environ["REQUEST_CA_BUNDLE"] = certifi.where()
 
-Path("uploads").mkdir(exists_ok=True)
-Path("chroma_db").mkdir(exist_ok=True)
+def _ensure_directory(path: str | Path) -> None:
+    """Create a directory in a way that remains compatible with older Python versions."""
+    directory = Path(path)
+    try:
+        directory.mkdir(exist_ok=True)
+    except TypeError:
+        if not directory.exists():
+            directory.mkdir()
+
+
+_ensure_directory("uploads")
+_ensure_directory("chroma_db")
 
 # Embedding model
-embeddings = GoogleGenerativeAIEmbeddings(model=os.getenv("EMBEDDING_MODEL","gemini-embedding-001"))
-
-vectorstore = Chroma(
-  collection_name="agentic_chatbot_docs",
-  embedding_function=embeddings,
-  persist_directory="chroma_db"
+embeddings = GoogleGenerativeAIEmbeddings(
+    model=os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
 )
 
-def read_file(file_path:str)->str:
-  path = Path(file_path)
-  suffix=path.suffix.lower()
-
-  if suffix == ".pdf":
-    reader = PdfReader(file_path)
-    text = ""
-
-    for page in reader.pages:
-      text +=page.extract_text() or ""
-      text += "\n"
-
-    return text
-  
-  if suffix == ".docx":
-    return docx2txt.process(file_path)
-  
-  if suffix in [".txt", ".md", ".py", ".csv"]:
-    return path.read_text(encoding="utf-8",errors="ignore")
-
-  return ValueError("Unsupported file type. Upload PDF, DOCX, TXT, MD, PY or CSV.")
-
-def add_docs_to_rag(file_path:str, thread_id:str):
-  text = read_file(file_path)
-
-  if not text.strip():
-    raise ValueError("Failed to extract text from this file")
-
-  splitter = RecursiveCharacterTextSplitter(
-    chunk_size=1000,
-    chunk_overlap=200
-  )
-
-  chunks = splitter.split_text(text)
-
-  docs: List[Document] = [
-    Document(
-      page_content=chunk,
-      metadata={
-        "thread_id": thread_id,
-        "source": Path(file_path).name
-      }
-    )
-    for chunk in chunks
-  ]
-
-  vectorstore.add_documents(docs)
-  return {
-    "filename": Path(file_path).name,
-    "chunks": len(docs)
-  }
+vectorstore = Chroma(
+    collection_name="agentic_chatbot_docs",
+    embedding_function=embeddings,
+    persist_directory="chroma_db",
+)
 
 
-def retrieve_from_rag(query:str, thread_id:str, k:int = 4)->str:
-  docs = vectorstore.similarity_search(
-    query,
-    k=k,
-    filter={"thread_id":thread_id}
-  )
+def read_file(file_path: str) -> str:
+    """Extract text content from a supported upload file type."""
+    path = Path(file_path)
+    suffix = path.suffix.lower()
 
-  if not docs:
-    return "No relevant content found."
+    if suffix == ".pdf":
+        reader = PdfReader(file_path)
+        text = ""
 
-  results = []
-  for i,doc in enumerate(docs, start=1):
-    source = doc.metadata.get("source","uploaded document")
-    results.append(
-      f"[Source {i}: {source}]\n{doc.page_content}"
+        for page in reader.pages:
+            text += page.extract_text() or ""
+            text += "\n"
+
+        return text
+
+    if suffix == ".docx":
+        return docx2txt.process(file_path)
+
+    if suffix in [".txt", ".md", ".py", ".csv"]:
+        return path.read_text(encoding="utf-8", errors="ignore")
+
+    raise ValueError("Unsupported file type. Upload PDF, DOCX, TXT, MD, PY or CSV.")
+
+
+def add_docs_to_rag(file_path: str, thread_id: str):
+    """Split a file into chunks and store them in the vector database for a thread."""
+    text = read_file(file_path)
+
+    if not text.strip():
+        raise ValueError("Failed to extract text from this file")
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=200,
     )
 
-  return "\n\n".join(results)
+    chunks = splitter.split_text(text)
+
+    docs: List[Document] = [
+        Document(
+            page_content=chunk,
+            metadata={
+                "thread_id": thread_id,
+                "source": Path(file_path).name,
+            },
+        )
+        for chunk in chunks
+    ]
+
+    vectorstore.add_documents(docs)
+    return {
+        "filename": Path(file_path).name,
+        "chunks": len(docs),
+    }
+
+
+def retrieve_from_rag(query: str, thread_id: str, k: int = 4) -> str:
+    """Retrieve the most relevant document chunks for a query within a thread."""
+    docs = vectorstore.similarity_search(
+        query,
+        k=k,
+        filter={"thread_id": thread_id},
+    )
+
+    if not docs:
+        return "No relevant content found."
+
+    results = []
+    for i, doc in enumerate(docs, start=1):
+        source = doc.metadata.get("source", "uploaded document")
+        results.append(f"[Source {i}: {source}]\n{doc.page_content}")
+
+    return "\n\n".join(results)
