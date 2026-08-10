@@ -5,6 +5,7 @@ python-multipart
 python-dotenv
 
 langchain
+langchain-community
 langchain-google-genai
 langchain-core
 langgraph
@@ -18,3 +19,5 @@ docx2txt
 langchain-tavily
 tavily-python
 sqlalchemy
+
+wikipedia

@@ -19,6 +19,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 from prompts.system_prompt import SYSTEM_PROMPT
+from src.agent.utils import tools
 
 load_dotenv()
 
@@ -97,3 +98,16 @@ def build_agent(model_name:  str):
 
   checkpointer = SqliteSaver(conn)
   return workflow.compile(checkpointer=checkpointer)
+
+
+# storing the langgraph agent in cache
+# so everytime we dont have to build it
+_AGENT_CACHE = {}
+
+def get_agent(model_name:str | None=None):
+  selected_model = normalize_model_name(model_name)
+
+  if selected_model not in _AGENT_CACHE:
+    _AGENT_CACHE[selected_model] = build_agent(selected_model)
+
+  return _AGENT_CACHE[selected_model]
